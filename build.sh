@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/sh
 # vim: softtabstop=2 shiftwidth=2 expandtab
 #
 # One-step build: (re)builds the local image from Dockerfile, then runs
