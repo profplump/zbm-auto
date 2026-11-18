@@ -1,23 +1,28 @@
 #!/bin/sh
-# vim: softtabstop=2 shiftwidth=2 expandtab
-#
-# One-step build: (re)builds the local image from Dockerfile, then runs
-# this directory's config/hooks through the pinned upstream
-# zbm-builder.sh (see zfsbootmenu/, a submodule), writing build products
-# to ./build. With no arguments this is the whole build; anything passed
-# here is forwarded as extra arguments to the container's build-init.sh /
-# generate-zbm (see build-init.sh -h inside the image, or CODE.md).
-#
-# Needs zfsbootmenu/ checked out: `git submodule update --init`.
 
-set -euo pipefail
+# One-step build:
+# - Builds a local image from Dockerfile
+# - Adds config/hooks using upstream's zbm-builder.sh
+# - Writes build products to ./build
 
+# Setup
+set -eu
 cd "$(dirname "$(readlink -f "$0")")"
-
-./build-image.sh
-
 mkdir -p build
 
+# Fetch zfsbootmenu if it looks empty
+if [ ! -e zfsbootmenu/zbm-builder.sh ]; then
+  git submodule update --init -- zfsbootmenu
+fi
+
+# Stamp a fresh ID into each build
+{ od -An -N4 -tx1 /dev/urandom | tr -d ' \n'; echo; } > lib/zbm-auto-build-id
+
+# Build a local image with podman/docker
+cmd=$(command -v podman || command -v docker)
+"${cmd}" build -t localhost/zbm-auto-builder:latest .
+
+# Apply our automatic rollback overlay
 exec ./zfsbootmenu/zbm-builder.sh \
   -b . \
   -i localhost/zbm-auto-builder:latest \

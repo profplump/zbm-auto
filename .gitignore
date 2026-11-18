@@ -7,5 +7,5 @@
 /dracut.conf.d/user_hooks.conf
 /mkinitcpio.conf.d/
 
-# Regenerated every run by build-image.sh -- see that file
+# Regenerated every run by build.sh -- see that file
 /lib/zbm-auto-build-id

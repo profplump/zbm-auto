@@ -69,9 +69,7 @@ for the full list of options (EFI signing, split kernel/initramfs output,
 etc).
 
 To add packages to the build image (for example, a different EFI tool),
-extend `EXTRA_PACKAGES` in `Dockerfile` or pass
-`--build-arg EXTRA_PACKAGES="efivar foo bar"` through to
-`build-image.sh`.
+extend `EXTRA_PACKAGES` in `Dockerfile`.
 
 ## Deploying
 
