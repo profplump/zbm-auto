@@ -1,0 +1,7 @@
+EFI:
+  Enabled: true
+Components:
+  Enabled: true
+Kernel:
+  # zbm.timeout=1: auto-boot countdown in seconds
+  CommandLine: ro quiet loglevel=0 zbm.timeout=1

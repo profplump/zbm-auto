@@ -1,0 +1,4 @@
+[submodule "zfsbootmenu"]
+	path = zfsbootmenu
+	url = https://github.com/zbm-dev/zfsbootmenu.git
+	shallow = true

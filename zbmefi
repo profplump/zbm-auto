@@ -1,0 +1,147 @@
+#!/bin/sh
+# zbmefi -- post-boot tool for the zbm-auto EFI boot-attempt-tracking vars
+
+set -eu
+ZBM_EFI_VENDOR_UUID="f8d6e8d4-b7ab-4ff8-9657-24b15cf51ebe"
+tab="$(printf '\t')"
+
+# arg1: var name (without the vendor-UUID/"ZBM." prefix), arg2: value to write
+# returns: efivar's exit code
+zbm_efivar_write() {
+  local name tmp rc
+  name="${ZBM_EFI_VENDOR_UUID}-ZBM.$1"
+  tmp="$(mktemp)"
+  printf '%s' "$2" > "${tmp}"
+  efivar -n "${name}" -w -f "${tmp}" -A 0x7 2>/dev/null
+  rc=$?
+  rm -f "${tmp}"
+  return "${rc}"
+}
+
+# arg1: var name (without the vendor-UUID/"ZBM." prefix)
+# prints: the var's value, or nothing if unset/unreadable
+zbm_efivar_read() {
+  local tmp line ascii value
+  tmp="$(mktemp)"
+  if ! efivar -n "${ZBM_EFI_VENDOR_UUID}-ZBM.$1" -p > "${tmp}" 2>/dev/null; then
+    rm -f "${tmp}"
+    return 0
+  fi
+  value=""
+  while IFS= read -r line; do
+    case "${line}" in
+      *'|'*'|'*)
+        ascii="${line#*|}"
+        ascii="${ascii%|*}"
+        value="${value}${ascii}"
+        ;;
+    esac
+  done < "${tmp}"
+  rm -f "${tmp}"
+  value="${value%"${value##*[![:space:]]}"}"
+  printf '%s' "${value}"
+}
+
+# arg1: guid
+# prints: the dataset name owning that guid, or nothing if no match
+zbm_be_name_for_guid() {
+  local target_guid tmp found be_name be_guid
+  target_guid="$1"
+  tmp="$(mktemp)"
+  zfs list -H -o name,guid -t filesystem > "${tmp}" 2>/dev/null
+  found=""
+  while IFS="${tab}" read -r be_name be_guid; do
+    if [ "${be_guid}" = "${target_guid}" ]; then
+      found="${be_name}"
+      break
+    fi
+  done < "${tmp}"
+  rm -f "${tmp}"
+  printf '%s' "${found}"
+}
+
+usage() {
+  cat <<'EOF'
+Usage: zbmefi [--guid <guid>] [--attempt] [--rollback]
+
+With no --attempt/--rollback, only prints status.
+
+  --guid <guid>   Target this BE's guid instead of the running BE
+  --attempt       Reset the target's attempt counter to 0 (mark success)
+  --rollback      Set ZBM.ROLLBACK to the target's guid (bless it)
+EOF
+}
+
+guid=""
+do_attempt=0
+do_rollback=0
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --guid)
+      guid="${2:?--guid requires an argument}"
+      shift 2
+      ;;
+    --attempt)
+      do_attempt=1
+      shift
+      ;;
+    --rollback)
+      do_rollback=1
+      shift
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "zbmefi: unrecognized argument: $1" >&2
+      usage >&2
+      exit 1
+      ;;
+  esac
+done
+
+if ! findmnt -t efivarfs /sys/firmware/efi/efivars >/dev/null 2>&1; then
+  echo "zbmefi: efivarfs is not mounted at /sys/firmware/efi/efivars" >&2
+  exit 1
+fi
+
+if [ -z "${guid}" ]; then
+  root_be="$(findmnt -no SOURCE / 2>/dev/null)" || root_be=""
+  if [ -z "${root_be}" ]; then
+    echo "zbmefi: could not determine the running BE (findmnt -no SOURCE / failed -- is findmnt installed?)" >&2
+    exit 1
+  fi
+  guid="$(zfs get -H -o value guid "${root_be}" 2>/dev/null)" || guid=""
+  if [ -z "${guid}" ]; then
+    echo "zbmefi: could not read a ZFS guid for ${root_be}" >&2
+    exit 1
+  fi
+fi
+
+if [ -z "$(zbm_be_name_for_guid "${guid}")" ]; then
+  echo "zbmefi: no dataset found with guid ${guid}" >&2
+  exit 1
+fi
+
+if [ "${do_attempt}" -eq 1 ]; then
+  zbm_efivar_write "${guid}" "0" \
+    || { echo "zbmefi: failed to reset ZBM.${guid}" >&2; exit 1; }
+fi
+
+if [ "${do_rollback}" -eq 1 ]; then
+  zbm_efivar_write "ROLLBACK" "${guid}" \
+    || { echo "zbmefi: failed to set ZBM.ROLLBACK" >&2; exit 1; }
+fi
+
+attempt_hint="$(zbm_efivar_read "ATTEMPT")"
+rollback_guid="$(zbm_efivar_read "ROLLBACK")"
+rollback_be=""
+[ -n "${rollback_guid}" ] && rollback_be="$(zbm_be_name_for_guid "${rollback_guid}")"
+target_attempt="$(zbm_efivar_read "${guid}")"
+target_be="$(zbm_be_name_for_guid "${guid}")"
+
+printf 'ZBM.ATTEMPT: %s\n' "${attempt_hint:-<unset>}"
+printf 'ZBM.ROLLBACK: guid=%s be=%s\n' "${rollback_guid:-<unset>}" "${rollback_be:-<unresolved>}"
+printf 'ZBM.%s: attempt=%s be=%s\n' "${guid}" "${target_attempt:-<unset>}" "${target_be:-<unresolved>}"

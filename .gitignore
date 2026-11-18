@@ -1,0 +1,11 @@
+# Build products -- see build.sh
+/build/
+
+# Regenerated every run by zbm-builder.sh / build-init.sh against this
+# directory (used as BUILD_DIRECTORY) -- not something we author
+/hostid
+/dracut.conf.d/user_hooks.conf
+/mkinitcpio.conf.d/
+
+# Regenerated every run by build-image.sh -- see that file
+/lib/zbm-auto-build-id
